@@ -84,6 +84,10 @@ export interface IPeoplePickerProps {
    * Specify the user / group types to retrieve
    */
   principleTypes?: PrincipalType[];
+  /**
+   * Use the clientPeoplePickerSearchUser endpoint
+   */
+  searchForPeople?: boolean;
 }
 
 export interface IPeoplePickerState {

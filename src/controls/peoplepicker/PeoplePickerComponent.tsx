@@ -161,6 +161,14 @@ export class PeoplePicker extends React.Component<IPeoplePickerProps, IPeoplePic
    * Retrieve the users
    */
   private async _thisLoadUsers(): Promise<void> {
+
+    if(this.props.searchForPeople) {
+      this.setState({
+        peoplePersonaMenu : []
+      });
+      return null;
+    }
+
     var stringVal: string = "";
 
     if (this.props.groupName) {
@@ -289,10 +297,21 @@ export class PeoplePicker extends React.Component<IPeoplePickerProps, IPeoplePic
    */
   private _onPersonFilterChanged = (filterText: string, currentPersonas: IPersonaProps[], limitResults?: number): IPersonaProps[] => {
     if (filterText) {
-      let filteredPersonas: IPersonaProps[] = this._filterPersons(filterText);
-      filteredPersonas = this._removeDuplicates(filteredPersonas, currentPersonas);
-      filteredPersonas = limitResults ? filteredPersonas.splice(0, limitResults) : filteredPersonas;
-      return filteredPersonas;
+      if(this.props.searchForPeople) {
+        if(filterText.length > 2) {
+          let filteredPersonasPromise =  this._searchPeople(filterText, currentPersonas );
+          filteredPersonasPromise.then((filteredPersonas) => {
+            filteredPersonas = limitResults ? filteredPersonas.splice(0, limitResults) : filteredPersonas;
+            return filteredPersonas;
+          });
+        } 
+      } else {
+        let filteredPersonas: IPersonaProps[] = this._filterPersons(filterText);
+        filteredPersonas = this._removeDuplicates(filteredPersonas, currentPersonas);
+        filteredPersonas = limitResults ? filteredPersonas.splice(0, limitResults) : filteredPersonas;
+        return filteredPersonas;
+      }
+      
     } else {
       return [];
     }
@@ -392,6 +411,71 @@ export class PeoplePicker extends React.Component<IPeoplePickerProps, IPeoplePic
       return value;
     }
   };
+
+  /**
+   *  Search for users
+   */
+  private async _searchPeople(terms: string, currentPersonas: IPersonaProps[]): Promise<IPersonaProps[]> {
+
+    const restApi: string = `${this.props.context.pageContext.web.absoluteUrl}/_api/SP.UI.ApplicationPages.ClientPeoplePickerWebServiceInterface.clientPeoplePickerSearchUser`;
+    let principalType: number = 1;
+
+    const payload = {
+      'queryParams': {
+        'AllowEmailAddresses': true,
+        'AllowMultipleEntities': false,
+        'AllUrlZones': false,
+        'MaximumEntitySuggestions': 10,
+        'PrincipalSource': 15,
+        // PrincipalType controls the type of entities that are returned in the results.
+        // Choices are All - 15, Distribution List - 2 , Security Groups - 4, SharePoint Groups - 8, User - 1.
+        // These values can be combined (example: 13 is security + SP groups + users)
+        'PrincipalType': principalType,
+        'QueryString': terms
+      }
+    };
+
+    
+    
+    try {
+
+      const response = await this.props.context.spHttpClient.get(restApi, SPHttpClient.configurations.v1, {
+        headers: {
+          'Accept': 'application/json;odata.metadata=none'
+        }
+      });
+
+      if (response.ok) {
+          const data: any = await response.json();
+
+          let relevantResults: any = JSON.parse(data.value);
+          let resultCount: number = relevantResults.length;
+          let people:IPersonaProps[] = [];
+          let persona: IPersonaProps = {};
+          if (resultCount > 0) {
+            for (var index = 0; index < resultCount; index++) {
+              var p = relevantResults[index];
+              let account = p.Key.substr(p.Key.lastIndexOf('|') + 1);
+              
+              persona.primaryText = p.DisplayText;
+              persona.imageUrl = `/_layouts/15/userphoto.aspx?size=S&accountname=${account}`;
+              persona.imageShouldFadeIn = true;
+              persona.secondaryText = p.EntityData.Title;
+              persona.id = account;
+              people.push(persona);
+            }
+          }
+
+          people = this._removeDuplicates(people, currentPersonas);
+          return people;
+
+      }
+
+    } catch(e) {
+      console.error("Error occured while searching for users.");
+    }
+    
+  }
 
   /**
    * Default React component render method
