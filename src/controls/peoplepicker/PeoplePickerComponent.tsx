@@ -295,15 +295,12 @@ export class PeoplePicker extends React.Component<IPeoplePickerProps, IPeoplePic
    * @param currentPersonas
    * @param limitResults
    */
-  private _onPersonFilterChanged = (filterText: string, currentPersonas: IPersonaProps[], limitResults?: number): IPersonaProps[] => {
+  private _onPersonFilterChanged = (filterText: string, currentPersonas: IPersonaProps[], limitResults?: number): IPersonaProps[] | Promise<IPersonaProps[]> => {
     if (filterText) {
       if(this.props.searchForPeople) {
         if(filterText.length > 2) {
-          let filteredPersonasPromise =  this._searchPeople(filterText, currentPersonas );
-          filteredPersonasPromise.then((filteredPersonas) => {
-            filteredPersonas = limitResults ? filteredPersonas.splice(0, limitResults) : filteredPersonas;
-            return filteredPersonas;
-          });
+          let filteredPersonasPromise = this._searchPeople(filterText, currentPersonas );
+          return filteredPersonasPromise;
         } 
       } else {
         let filteredPersonas: IPersonaProps[] = this._filterPersons(filterText);
@@ -434,45 +431,36 @@ export class PeoplePicker extends React.Component<IPeoplePickerProps, IPeoplePic
         'QueryString': terms
       }
     };
-
-    
     
     try {
 
-      const response = await this.props.context.spHttpClient.get(restApi, SPHttpClient.configurations.v1, {
+      const response = await this.props.context.spHttpClient.post(restApi, SPHttpClient.configurations.v1, {
         headers: {
           'Accept': 'application/json;odata.metadata=none'
-        }
+        }, body: JSON.stringify(payload)
       });
-
+    
       if (response.ok) {
           const data: any = await response.json();
+         
+          let relevantResults: any[] = JSON.parse(data.value);
 
-          let relevantResults: any = JSON.parse(data.value);
-          let resultCount: number = relevantResults.length;
-          let people:IPersonaProps[] = [];
-          let persona: IPersonaProps = {};
-          if (resultCount > 0) {
-            for (var index = 0; index < resultCount; index++) {
-              var p = relevantResults[index];
-              let account = p.Key.substr(p.Key.lastIndexOf('|') + 1);
-              
-              persona.primaryText = p.DisplayText;
-              persona.imageUrl = `/_layouts/15/userphoto.aspx?size=S&accountname=${account}`;
-              persona.imageShouldFadeIn = true;
-              persona.secondaryText = p.EntityData.Title;
-              persona.id = account;
-              people.push(persona);
-            }
-          }
-
-          people = this._removeDuplicates(people, currentPersonas);
-          return people;
-
+          return this._removeDuplicates(relevantResults.map((p) => {
+            let account = p.Key.substr(p.Key.lastIndexOf('|') + 1);
+            return (
+              {
+                primaryText:p.DisplayText,
+                id: account,
+                secondaryText: p.EntityData.Title,
+                imageUrl: this.generateUserPhotoLink(p.EntityData.Email),
+                imageShouldFadeIn: true
+              } as IPersonaProps
+            )
+          }), currentPersonas);
       }
 
     } catch(e) {
-      console.error("Error occured while searching for users.");
+      console.error("Error occured while searching for users.", e);
     }
     
   }
